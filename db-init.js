@@ -17,6 +17,7 @@ connection.connect()
 const query = util.promisify(connection.query).bind(connection)
 
 const createSql = `
+    CREATE DATABASE IF NOT EXISTS sango;
     CREATE TABLE IF NOT EXISTS english(
         word_id INT NOT NULL AUTO_INCREMENT,
         word CHAR(255) NOT NULL,
@@ -37,25 +38,6 @@ const createSql = `
         word CHAR(255) NOT NULL,
         UNIQUE (word),
         PRIMARY KEY (word_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS english_japanese(
-        english_word_id INT NOT NULL,
-        japanese_word_id INT NOT NULL,
-        FOREIGN KEY (english_word_id) REFERENCES english(word_id) ON UPDATE CASCADE,
-        FOREIGN KEY (japanese_word_id) REFERENCES japanese(word_id) ON UPDATE CASCADE,
-    );gre
-    CREATE TABLE IF NOT EXISTS english_russian(
-        english_word_id INT NOT NULL,
-        russian_word_id INT NOT NULL,
-        FOREIGN KEY (english_word_id) REFERENCES english(word_id) ON UPDATE CASCADE,
-        FOREIGN KEY (russian_word_id) REFERENCES russian(word_id) ON UPDATE CASCADE,
-    );
-    CREATE TABLE IF NOT EXISTS japanese_russian(
-        japanese_word_id INT NOT NULL,
-        russian_word_id INT NOT NULL,
-        FOREIGN KEY (japanese_word_id) REFERENCES japanese(word_id) ON UPDATE CASCADE,
-        FOREIGN KEY (russian_word_id) REFERENCES russian(word_id) ON UPDATE CASCADE,
     );
 
     CREATE TABLE IF NOT EXISTS kunyomi (
@@ -97,6 +79,26 @@ const createSql = `
         id INT PRIMARY KEY AUTO_INCREMENT,
         language_name CHAR(255) NOT NULL,
         UNIQUE(language_name)
+    );
+
+    CREATE TABLE IF NOT EXISTS english_japanese(
+        english_word_id INT NOT NULL,
+        japanese_word_id INT NOT NULL,
+        CONSTRAINT fk_english_word_id FOREIGN KEY (english_word_id) REFERENCES english(word_id) ON UPDATE CASCADE,
+        CONSTRAINT fk_japanese_word_id FOREIGN KEY (japanese_word_id) REFERENCES japanese(word_id) ON UPDATE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS english_russian(
+        english_word_id INT NOT NULL,
+        russian_word_id INT NOT NULL,
+        CONSTRAINT fk_english_word_id2 FOREIGN KEY (english_word_id) REFERENCES english(word_id) ON UPDATE CASCADE,
+        CONSTRAINT fk_russian_word_id FOREIGN KEY (russian_word_id) REFERENCES russian(word_id) ON UPDATE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS japanese_russian(
+        japanese_word_id INT NOT NULL,
+        russian_word_id INT NOT NULL,
+        CONSTRAINT fk_japanese_word_id2 FOREIGN KEY (japanese_word_id) REFERENCES japanese(word_id) ON UPDATE CASCADE,
+        CONSTRAINT fk_russian_word_id2 FOREIGN KEY (russian_word_id) REFERENCES russian(word_id) ON UPDATE CASCADE
     );
 `;
 (async () => {
