@@ -1,4 +1,6 @@
 require('dotenv').config()
+const data = require('./kanji.json')
+const db = require('./db')
 
 const mysql = require('mysql')
 const util = require('util')
@@ -28,7 +30,6 @@ const createSql = `
     CREATE TABLE IF NOT EXISTS japanese(
         word_id INT NOT NULL AUTO_INCREMENT,
         word CHAR(255) NOT NULL,
-        strokes CHAR(255) NOT NULL,
         UNIQUE (word),
         PRIMARY KEY (word_id)
     );
@@ -81,27 +82,36 @@ const createSql = `
         UNIQUE(language_name)
     );
 
-    CREATE TABLE IF NOT EXISTS english_japanese(
-        english_word_id INT NOT NULL,
-        japanese_word_id INT NOT NULL,
-        CONSTRAINT fk_english_word_id FOREIGN KEY (english_word_id) REFERENCES english(word_id) ON UPDATE CASCADE,
-        CONSTRAINT fk_japanese_word_id FOREIGN KEY (japanese_word_id) REFERENCES japanese(word_id) ON UPDATE CASCADE
+    CREATE TABLE IF NOT EXISTS japanese_english(
+        japanese_id INT NOT NULL,
+        english_id INT NOT NULL,
+        CONSTRAINT fk_japanese_id FOREIGN KEY (japanese_id) REFERENCES japanese(word_id) ON DELETE CASCADE,
+        CONSTRAINT fk_english_id FOREIGN KEY (english_id) REFERENCES english(word_id) ON DELETE CASCADE,
+        PRIMARY KEY (japanese_id, english_id)
     );
 
     CREATE TABLE IF NOT EXISTS english_russian(
-        english_word_id INT NOT NULL,
-        russian_word_id INT NOT NULL,
-        CONSTRAINT fk_english_word_id2 FOREIGN KEY (english_word_id) REFERENCES english(word_id) ON UPDATE CASCADE,
-        CONSTRAINT fk_russian_word_id FOREIGN KEY (russian_word_id) REFERENCES russian(word_id) ON UPDATE CASCADE
+        english_id INT NOT NULL,
+        russian_id INT NOT NULL,
+        CONSTRAINT fk_english_id2 FOREIGN KEY (english_id) REFERENCES english(word_id) ON DELETE CASCADE,
+        CONSTRAINT fk_russian_id FOREIGN KEY (russian_id) REFERENCES russian(word_id) ON DELETE CASCADE,
+        PRIMARY KEY (english_id, russian_id)
+
     );
     CREATE TABLE IF NOT EXISTS japanese_russian(
-        japanese_word_id INT NOT NULL,
-        russian_word_id INT NOT NULL,
-        CONSTRAINT fk_japanese_word_id2 FOREIGN KEY (japanese_word_id) REFERENCES japanese(word_id) ON UPDATE CASCADE,
-        CONSTRAINT fk_russian_word_id2 FOREIGN KEY (russian_word_id) REFERENCES russian(word_id) ON UPDATE CASCADE
+        japanese_id INT NOT NULL,
+        russian_id INT NOT NULL,
+        CONSTRAINT fk_japanese_id2 FOREIGN KEY (japanese_id) REFERENCES japanese(word_id) ON DELETE CASCADE,
+        CONSTRAINT fk_russian_id2 FOREIGN KEY (russian_id) REFERENCES russian(word_id) ON DELETE CASCADE,
+        PRIMARY KEY (japanese_id, russian_id)
+
     );
 `;
+
+
+
 (async () => {
+    
     try {
         const rows = await query(createSql)
         console.log(rows)

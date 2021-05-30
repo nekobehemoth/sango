@@ -1,10 +1,9 @@
 require('dotenv').config()
 
-const {deepArrayScan, wordCleaner} = require('./lib/utilites')
+const {deepArrayScan, wordCleaner, dashToUnderscore} = require('./lib/utilites')
 
 const mysql = require('mysql')
 const util = require('util')
-const { Console, clear } = require('console')
 
 const pool = mysql.createPool({
     connectionLimit: 5,
@@ -18,126 +17,123 @@ const pool = mysql.createPool({
 
 const query = util.promisify(pool.query).bind(pool)
 
+
+//Wrapper over 'query' function
 async function makeQuery(sql){
     try {
         let result = await query(sql)
-        // result = deepArrayScan(result)
+        // if (Array.isArray(result)){
+        //     result = deepArrayScan(result)
+        // }
         return result
     }
     catch(err){
         if (err.code ==='ER_DUP_ENTRY'){
-            console.log('This instance already exist in DB');
+            throw new Error('This entity already exist in DB');
         } else {
             throw err;
         }    
     } 
 }
 
-function getColumnName(table){
-    let columnName;
-    switch (table) {
-        case 'japanese':
-        case 'english':
-        case 'russian':
-            columnName = 'word';
-            break;
-        default:
-            columnName = wordCleaner(table);
-    }
-    return columnName;
-}
 
-function insertInto(firstInstanceTable = '', secondInstanceTable = ''){
-    let standartTableName;
 
-    if(firstInstanceTable) firstInstanceTable = wordCleaner(firstInstanceTable);
-    if(secondInstanceTable) secondInstanceTable = wordCleaner(secondInstanceTable);
+//////////////////////////////////////////////////////'Get' functions//////////////////////////////////////////////////////
 
-    if(firstInstanceTable && secondInstanceTable){
-        let tableName = `${firstInstanceTable}_${secondInstanceTable}`;
-        
-        switch(tableName) {
-            case 'japanese_english':
-            case 'english_japanese':
-                standartTableName = 'japanese_english';
-                break;
-            case 'japanese_russian':
-            case 'russian_japanese':
-                standartTableName = 'japanese_russian';
-                break;
-            case 'english_russian':
-            case 'russian_english':
-                standartTableName = 'english_russian';
-                break;
-            default:
-                standartTableName = arguments[0];
-        }
-        
-        return standartTableName
-    } else {
-        return wordCleaner(arguments[0])
-    }
-}
-
-function addInstances(instances, table){
-    table = wordCleaner(table);
-    column = wordCleaner(getColumnName(table));
-    let query = '';
-    let splited = instances.split(',');
-    if (splited.length > 1){
-        splited.forEach((instance) => {
-            instance = wordCleaner(instance)
-            if (instance) query += `INSERT INTO ${table}(${column}) VALUES('${instance}');` 
-        });
-    } else {
-        if (instances) query += `INSERT INTO ${table}(${column}) VALUES('${wordCleaner(instances)}');`;
-    }
-    return makeQuery(query);
-}
-
-async function addRelation(firstInstance, firstInstanceTable, secondInstance, secondInstanceTable){
-
-    firstInstance = wordCleaner(firstInstance)
-    firstInstanceTable = wordCleaner(firstInstanceTable)
-    secondInstance = wordCleaner(secondInstance)
-    secondInstanceTable = wordCleaner(secondInstanceTable)
-
-    let firstInstanceColumn = getColumnName(firstInstanceTable);
-    let secondInstanceColumn = getColumnName(secondInstanceTable);
-
-    let [firstInstanceId] = await findInstanceId(firstInstance, firstInstanceTable, firstInstanceColumn);
-    let [secondInstanceId] = await findInstanceId (secondInstance, secondInstanceTable, secondInstanceColumn);
-    
-
-    let into = insertInto(firstInstanceTable, secondInstanceTable);
-
+async function getColumnName(table){
     let query = `
-              INSERT INTO ${into}
-              VALUES (${firstInstanceId}, ${secondInstanceId})`;
-    makeQuery(query);
-    
+                 SELECT COLUMN_NAME 
+                 FROM INFORMATION_SCHEMA.COLUMNS
+                 WHERE table_name = '${table}'
+                 AND ORDINAL_POSITION = 2
+                `
+    let columnName = await makeQuery(query)
+    columnName = deepArrayScan(columnName)
+    return columnName[0][0];
 }
 
-async function findInstanceId(instance, table, columnName) {
-    let query = `
-                 SELECT ${table}.${columnName}_id
-                 FROM ${table}
-                 WHERE ${columnName} = '${instance}';`;
-    let result = await makeQuery(query);
-    return deepArrayScan(result)
-}
-
-async function getInstanceById(id, table){
-    let column = getColumnName(table)
+async function getEntityById(id, table){
+    let column = await getColumnName(table)
     let query = `
                  SELECT ${table}.${column}
                  FROM ${table}
                  WHERE ${column}_id = ${id};
                 `;
     let result = await makeQuery(query);
-    // result = deepArrayScan(result)
     return result
 }
+
+async function getEntityId(entity, table) {
+    let columnName = await getColumnName(table)
+    let query = `
+                 SELECT ${table}.${columnName}_id
+                 FROM ${table}
+                 WHERE ${columnName} = '${entity}';`;
+    try{
+        let result = await makeQuery(query);
+        if (result.length === 0){
+            throw new Error(`Here no '${entity}' in database`)
+        }
+        result = deepArrayScan(result)
+        return result
+    } catch (err) {
+        throw new Error(err.message)
+    }
+    
+}
+
+async function getRelation(entity, table){
+    table = dashToUnderscore(table)
+    entity = wordCleaner(entity)
+    let founded = await search(entity)
+    let foundedTable = founded.table
+    let foundedTableColumn = await getColumnName(foundedTable)
+    
+    let splited = table.split('_')
+    let firstTable = splited[0]
+    let secondTable = splited[1]
+    
+    let firstEntityColumn = await getColumnName(firstTable)
+    let secondEntityColumn = await getColumnName(secondTable)
+    
+    let sql = `
+                SELECT ${firstTable}.${firstEntityColumn} AS ${firstTable}, ${secondTable}.${secondEntityColumn} AS ${secondTable}
+                FROM ((${table}
+                JOIN ${firstTable} ON ${table}.${firstTable}_id=${firstTable}.${firstEntityColumn}_id)
+                JOIN ${secondTable} ON ${table}.${secondTable}_id=${secondTable}.${secondEntityColumn}_id)
+                WHERE ${foundedTable}.${foundedTableColumn} LIKE '%${entity}%';
+        `
+        
+    try {
+            let result = await makeQuery(sql)
+            if (result.length === 0) {
+                throw new Error ('No relation in database')
+            }
+            return result
+    } catch (err) {
+        throw new Error(err.message)
+    }
+    
+}
+
+module.exports.getRelation = getRelation
+
+async function getAllFromTable(table){
+    let query = `
+                 SELECT * FROM ${table};
+                `
+    try {
+        let result = await makeQuery(query)
+        if (result.length === 0) {
+            throw new Error("No data in database yet")
+        }
+        return result
+    } catch (err) {
+        throw new Error(err.message)
+    }
+
+}
+module.exports.getAllFromTable = getAllFromTable
 
 async function search(searchFor){
     let query = '';
@@ -145,41 +141,101 @@ async function search(searchFor){
 
     for (table of tables){
         query = `
-                 SELECT ${table}.word_id
+                 SELECT *
                  FROM ${table}
                  WHERE word LIKE '%${searchFor}%';
                 `;
         let queryResult = await makeQuery(query)
         if(queryResult.length !== 0){
-            return [...queryResult, table]
+            
+            return {queryResult, table}
         }
     }
-    return "Not found";
+    throw new Error("Not found")
 
 }
 
-async function getAllFromTable(table){
+module.exports.search = search
+
+//////////////////////////////////////////////////////'Add' functions//////////////////////////////////////////////////////
+
+async function addEntities(entities, table){
+    table = wordCleaner(table);
+    let column = await getColumnName(table);
+    let query = '';
+    let splited = entities.split(',');
+    if (splited.length > 1){
+        splited.forEach((entity) => {
+            entity = wordCleaner(entity)
+            if (entity) query += `INSERT INTO ${table}(${column}) VALUES('${entity}');` 
+        });
+    } else {
+        if (entities) query += `INSERT INTO ${table}(${column}) VALUES('${wordCleaner(entities)}');`;
+    }
+    try {
+        makeQuery(query);
+    } catch (err) {
+        throw new Error(err.message)
+    }
+}
+
+module.exports.addEntities = addEntities
+
+async function addRelation(firstEntity, secondEntity, table){
+    let splited = table.split('-')
+    let firstEntityTable = wordCleaner(splited[0])
+    let secondEntityTable = wordCleaner(splited[1])
+    firstEntity = wordCleaner(firstEntity)
+    secondEntity = wordCleaner(secondEntity)
+
+    let [firstEntityId] = await getEntityId(firstEntity, firstEntityTable);
+    let [secondEntityId] = await getEntityId (secondEntity, secondEntityTable);
+    
+    let into = dashToUnderscore(table)
+
     let query = `
-                 SELECT * FROM ${table};
-                `
-    let result = await makeQuery(query)
-    return result
+              INSERT INTO ${into}
+              VALUES (${firstEntityId}, ${secondEntityId})`;
+    await makeQuery(query);
+    
 }
 
+module.exports.addRelation = addRelation
 
 
-
-async function deleteInstance(instance, table) {
-    instance = wordCleaner(instance)
+//////////////////////////////////////////////////////'Delete' functions//////////////////////////////////////////////////////
+async function deleteEntity(entity, table) {
+    entity = wordCleaner(entity)
     table = wordCleaner(table)
-    let column = getColumnName(table)
+    let column = await getColumnName(table)
     let query = `
-                 DELETE FROM ${table} WHERE ${column} like '${instance}';
+                 DELETE FROM ${table} WHERE ${column} like '${entity}';
                 `
-
     let result = await makeQuery(query)
     return result
 }
+
+module.exports.deleteEntity = deleteEntity
+
+async function deleteRelation(firstEntity, secondEntity, table){
+    let splited = table.split('-')
+    let firstEntityTable = wordCleaner(splited[0])
+    let secondEntityTable = wordCleaner(splited[1])
+    firstEntity = wordCleaner(firstEntity)
+    secondEntity = wordCleaner(secondEntity)
+
+    let [firstEntityId] = await getEntityId(firstEntity, firstEntityTable);
+    let [secondEntityId] = await getEntityId (secondEntity, secondEntityTable);
+    
+    let into = dashToUnderscore(table)
+
+    let query = `
+                DELETE FROM ${into}
+                WHERE (${firstEntityTable}_word_id = ${firstEntityId} AND ${secondEntityTable}_word_id = ${secondEntityId});`;
+    await makeQuery(query);
+}
+
+module.exports.deleteRelation = deleteRelation
 
 async function deleteAllInTable(table) {
     table = wordCleaner(table)
@@ -190,5 +246,7 @@ async function deleteAllInTable(table) {
 }
 
 (async () => {
-    deleteAllInTable('english')
+    // let result = await getRelation('犬','japanese_russian')
+    // console.log(result)
+    
 } )()
